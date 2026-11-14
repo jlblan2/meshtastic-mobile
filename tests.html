@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Meshtastic Mobile tests</title>
+<style>
+  body { font: 15px/1.4 system-ui, sans-serif; margin: 16px; background: #0a1929; color: #eaf2fb; }
+  .ok { color: #49d17d; } .bad { color: #ff6b6b; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<h1>Meshtastic Mobile tests</h1>
+<p>Checks proto.js against messages encoded by the real protobuf library (tests/vectors.js,
+made by tools/make_vectors.py), and the LoRa / network rules against known answers.</p>
+<div id="out"></div>
+<script src="schema.js"></script>
+<script src="proto.js"></script>
+<script src="lora.js"></script>
+<script src="tests/vectors.js"></script>
+<script>
+(function () {
+  const out = document.getElementById('out');
+  let pass = 0, fail = 0;
+  const failures = [];
+  function check(name, ok, detail) {
+    if (ok) { pass++; return; }
+    fail++; failures.push(name + (detail ? '\n   ' + detail : ''));
+  }
+  const hex = (b) => Array.from(b).map((x) => x.toString(16).padStart(2, '0')).join('');
+  const unhex = (s) => Uint8Array.from(s.match(/../g) || [], (x) => parseInt(x, 16));
+  // JSON compare that ignores key order
+  function canon(v) {
+    if (Array.isArray(v)) return v.map(canon);
+    if (v && typeof v === 'object') { const o = {}; Object.keys(v).sort().forEach((k) => { o[k] = canon(v[k]); }); return o; }
+    return v;
+  }
+  const eq = (a, b) => JSON.stringify(canon(a)) === JSON.stringify(canon(b));
+
+  window.VECTORS.forEach((v, i) => {
+    const name = '#' + i + ' ' + v.type.replace('meshtastic.protobuf.', '');
+    try {
+      const obj = PB.decode(v.type, unhex(v.hex));
+      const js = PB.toJSON(v.type, obj);
+      check(name + ' decode', eq(js, v.json), 'got  ' + JSON.stringify(canon(js)) + '\n   want ' + JSON.stringify(canon(v.json)));
+      check(name + ' re-encode', hex(PB.encode(v.type, obj)) === v.hex, 'got  ' + hex(PB.encode(v.type, obj)) + '\n   want ' + v.hex);
+      check(name + ' encode from JSON', hex(PB.encode(v.type, v.json)) === v.hex, 'got  ' + hex(PB.encode(v.type, v.json)) + '\n   want ' + v.hex);
+    } catch (e) { check(name, false, String(e && e.stack || e)); }
+  });
+
+  // unknown fields survive a round trip (field 9999 varint 5, then field 1)
+  try {
+    const raw = unhex('f8f00405' + '0801');
+    const obj = PB.decode('Config.LoRaConfig', raw);
+    check('unknown field kept', obj.use_preset === true && hex(PB.encode('Config.LoRaConfig', obj)) === '0801' + 'f8f00405');
+  } catch (e) { check('unknown field kept', false, String(e)); }
+
+  // LoRa rules (answers from the desktop program's mesh_client.py)
+  check('US presets', LoRa.validPresets('US').length === 9);
+  check('EU_868 presets', eq(LoRa.validPresets('EU_868'), ['LONG_FAST', 'LONG_MODERATE', 'LONG_SLOW', 'MEDIUM_FAST', 'MEDIUM_SLOW', 'SHORT_FAST', 'SHORT_SLOW']));
+  check('US slots at 250 kHz', LoRa.slotCount('US', 250) === 104);
+  check('US slot 20 freq', Math.abs(LoRa.slotFreqMhz('US', 250, 20) - 906.875) < 1e-9);
+  check('LORA_24 wide bw', LoRa.presetParams('LONG_FAST', 'LORA_24')[0] === 812.5);
+  check('EU_433 bw codes', eq(LoRa.validBwCodes('EU_433'), [31, 62, 125, 250, 500]));
+  check('EU_868 bw codes', eq(LoRa.validBwCodes('EU_868'), [31, 62, 125, 250]));
+  const good = { region: 'US', use_preset: true, modem_preset: 'LONG_FAST', bandwidth: 250, spread_factor: 11, coding_rate: 5,
+    hop_limit: 3, tx_power: 30, channel_num: 20, override_frequency: 0, frequency_offset: 0 };
+  check('valid LoRa config', LoRa.validate(good).length === 0, LoRa.validate(good).join(' '));
+  check('power over limit', LoRa.validate(Object.assign({}, good, { region: 'EU_868', tx_power: 30, channel_num: 0 })).length === 1);
+  check('slot out of range', LoRa.validate(Object.assign({}, good, { channel_num: 105 })).length === 1);
+  check('turbo too wide for EU_868', LoRa.validate(Object.assign({}, good, { region: 'EU_868', modem_preset: 'LONG_TURBO', tx_power: 10, channel_num: 0 })).length === 1);
+  check('hop limit', LoRa.validate(Object.assign({}, good, { hop_limit: 8 })).length === 1);
+
+  // network
+  check('ip to stored int', Net.validateNetwork('STATIC', '192.168.1.10', '255.255.255.0', '192.168.1.1', '8.8.8.8').ip === 0x0A01A8C0);
+  check('mask from prefix', Net.validateNetwork('STATIC', '10.0.0.5', '/24', '', '').subnet === 0x00FFFFFF);
+  check('int to ip', Net.intToIp(0x0A01A8C0) === '192.168.1.10' && Net.intToIp(0) === '');
+  check('dhcp is empty', eq(Net.validateNetwork('DHCP', 'junk', '', '', ''), { ip: 0, subnet: 0, gateway: 0, dns: 0 }));
+  const throws = (fn) => { try { fn(); return false; } catch (e) { return true; } };
+  check('bad mask rejected', throws(() => Net.parseMask('255.0.255.0')));
+  check('wildcard mask rejected', throws(() => Net.parseMask('0.0.0.255')));
+  check('gateway off subnet', throws(() => Net.validateNetwork('STATIC', '192.168.1.10', '255.255.255.0', '192.168.2.1', '')));
+  check('broadcast address', throws(() => Net.validateNetwork('STATIC', '192.168.1.255', '255.255.255.0', '', '')));
+  check('bad ip', throws(() => Net.validateNetwork('STATIC', '192.168.1.300', '255.255.255.0', '', '')));
+
+  window.TEST_RESULT = { pass, fail, failures };
+  out.innerHTML = '';
+  const head = document.createElement('p');
+  head.className = fail ? 'bad' : 'ok';
+  head.textContent = pass + ' passed, ' + fail + ' failed';
+  out.appendChild(head);
+  failures.forEach((f) => { const p = document.createElement('p'); p.className = 'bad'; p.textContent = f; out.appendChild(p); });
+})();
+</script>
+</body>
+</html>

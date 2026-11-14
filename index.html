@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0a1929">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Mesh Mobile">
+<title>Meshtastic Mobile</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>Meshtastic Mobile</h1>
+  <span id="linkBadge" class="badge off">Not connected</span>
+</header>
+
+<div id="banner" class="banner" hidden></div>
+
+<main>
+  <section id="tab-radio" class="tab active"></section>
+
+  <section id="tab-messages" class="tab">
+    <div id="convBar" class="conv-bar"></div>
+    <div id="msgList" class="msg-list"></div>
+    <form id="msgForm" class="msg-form" autocomplete="off">
+      <textarea id="msgInput" rows="1" maxlength="400" placeholder="Message" aria-label="Message"></textarea>
+      <button type="submit" id="msgSend" class="primary">Send</button>
+    </form>
+  </section>
+
+  <section id="tab-nodes" class="tab">
+    <div class="toolbar">
+      <input id="nodeSearch" type="search" placeholder="Search nodes" aria-label="Search nodes">
+      <select id="nodeSort" aria-label="Sort nodes">
+        <option value="heard">Last heard</option>
+        <option value="name">Name</option>
+        <option value="distance">Distance</option>
+        <option value="snr">Signal</option>
+        <option value="hops">Hops</option>
+      </select>
+    </div>
+    <p id="nodeCount" class="muted small"></p>
+    <div id="nodeList"></div>
+  </section>
+
+  <section id="tab-map" class="tab">
+    <div id="map"></div>
+    <p id="mapNote" class="muted small map-note"></p>
+  </section>
+
+  <section id="tab-settings" class="tab"></section>
+</main>
+
+<nav id="nav">
+  <button data-tab="radio" class="active"><span class="ico">&#128225;</span>Radio</button>
+  <button data-tab="messages"><span class="ico">&#128172;</span>Messages<i id="unreadDot" hidden></i></button>
+  <button data-tab="nodes"><span class="ico">&#128101;</span>Nodes</button>
+  <button data-tab="map"><span class="ico">&#128506;</span>Map</button>
+  <button data-tab="settings"><span class="ico">&#9881;</span>Settings</button>
+</nav>
+
+<div id="sheetWrap" class="sheet-wrap" hidden><div id="sheet" class="sheet" role="dialog" aria-modal="true"></div></div>
+<div id="busy" class="busy" hidden><div><div class="spinner"></div><p id="busyText"></p></div></div>
+<div id="toast" class="toast" hidden></div>
+
+<script src="disclaimer.js" data-app="Meshtastic Mobile"></script>
+<script src="schema.js"></script>
+<script src="proto.js"></script>
+<script src="lora.js"></script>
+<script src="radio.js"></script>
+<script src="backup.js"></script>
+<script src="demo.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
