@@ -15,6 +15,7 @@
   const BROADCAST = 0xffffffff;
   const WRITE_PAUSE_MS = 300;        // between admin messages, so the radio's queue keeps up
   const ADMIN_TIMEOUT_MS = 8000;
+  const PAIRING_WAIT_MS = 90000;     // how long to keep trying while the user enters the PIN
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -28,7 +29,10 @@
     this.closing = false;
     this.onFrame = () => {};
     this.onClose = () => {};
-    this._disconnected = () => { if (!this.closing) this.onClose('The Bluetooth link to the radio dropped.'); };
+    this.onStatus = () => {};         // (text for the screen, line for the log)
+    this.opening = false;
+    this.pollTimer = 0;
+    this._disconnected = () => { if (!this.closing && !this.opening) this.onClose('The Bluetooth link to the radio dropped.'); };
     this._notified = () => this.drain();
   }
   BleTransport.supported = () => !!(navigator.bluetooth && navigator.bluetooth.requestDevice);
@@ -38,20 +42,58 @@
     this.name = this.device.name || 'radio';
   };
 
+  // The radio's characteristics are encrypted, so the first time a phone touches
+  // them it must pair. On iPhone (and some Androids) that first operation fails
+  // straight away while the PIN prompt is still on screen, and the link may drop
+  // and come back once the PIN is entered. Hanging up at that point would dismiss
+  // the prompt, so keep the link, wait, and try again until pairing has finished.
   BleTransport.prototype.open = async function () {
     if (!this.device) await this.pick();
     this.closing = false;
+    this.opening = true;                  // link drops while pairing are expected: don't report them
     this.chain = Promise.resolve();
     this.device.removeEventListener('gattserverdisconnected', this._disconnected);
     this.device.addEventListener('gattserverdisconnected', this._disconnected);
-    const server = await this.device.gatt.connect();
-    const service = await server.getPrimaryService(SERVICE);
-    this.toRadio = await service.getCharacteristic(TORADIO);
-    this.fromRadio = await service.getCharacteristic(FROMRADIO);
-    this.fromNum = await service.getCharacteristic(FROMNUM);
-    this.fromNum.removeEventListener('characteristicvaluechanged', this._notified);
-    this.fromNum.addEventListener('characteristicvaluechanged', this._notified);
-    await this.fromNum.startNotifications();
+    const deadline = Date.now() + PAIRING_WAIT_MS;
+    let lastError = null, linked = false;
+    try {
+      for (let attempt = 1; ; attempt++) {
+        if (this.closing) throw new Error('Cancelled');
+        try {
+          if (!this.device.gatt.connected || !linked) {
+            const server = this.device.gatt.connected ? this.device.gatt : await this.device.gatt.connect();
+            const service = await server.getPrimaryService(SERVICE);
+            this.toRadio = await service.getCharacteristic(TORADIO);
+            this.fromRadio = await service.getCharacteristic(FROMRADIO);
+            this.fromNum = await service.getCharacteristic(FROMNUM);
+            linked = true;
+          }
+          await this.fromRadio.readValue();           // proves the link is paired and encrypted
+          this.fromNum.removeEventListener('characteristicvaluechanged', this._notified);
+          this.fromNum.addEventListener('characteristicvaluechanged', this._notified);
+          try { await this.fromNum.startNotifications(); } catch (e) {
+            // Some browsers can't subscribe; poll instead so messages still arrive.
+            this.onStatus('', 'Notifications unavailable (' + ((e && e.message) || e) + '); polling the radio instead');
+            clearInterval(this.pollTimer);
+            this.pollTimer = setInterval(() => { if (!this.closing && !this.opening) this.drain(); }, 3000);
+          }
+          return;
+        } catch (e) {
+          lastError = e;
+          if (this.closing) throw new Error('Cancelled');
+          if (e && (e.name === 'NotFoundError' || e.name === 'SecurityError') && !/auth|encrypt|pair/i.test(e.message || '')) throw e;
+          if (Date.now() > deadline) throw e;
+          if (!this.device.gatt.connected) linked = false;
+          this.onStatus('Waiting for pairing… If the phone shows a PIN prompt, enter the 6-digit PIN from the radio’s screen ' +
+            '(123456 on radios without a screen). Still trying, attempt ' + (attempt + 1) + '.',
+          'Bluetooth not ready (attempt ' + attempt + '): ' + ((e && e.message) || e));
+          await sleep(2500);
+        }
+      }
+    } finally {
+      this.opening = false;
+      if (lastError && !this.device.gatt.connected) linked = false;
+    }
   };
 
   BleTransport.prototype._queue = function (op) {
@@ -83,6 +125,7 @@
 
   BleTransport.prototype.close = function () {
     this.closing = true;
+    clearInterval(this.pollTimer);
     try { if (this.device && this.device.gatt.connected) this.device.gatt.disconnect(); } catch (e) { /* gone */ }
   };
 
@@ -130,9 +173,12 @@
   function describeError(e) {
     const msg = (e && e.message) || String(e);
     if (e && e.name === 'NotFoundError') return 'No radio was chosen.';
-    if (/GATT Server is disconnected|NetworkError|Connection attempt failed/i.test(msg)) {
-      return 'Could not reach the radio over Bluetooth. Make sure it is powered on, in range, not connected ' +
-        'to another phone or app, and that the pairing PIN was entered. (' + msg + ')';
+    if (/auth|encrypt|pair|GATT Server is disconnected|NetworkError|Connection attempt failed|disconnected|not connected|unknown/i.test(msg) ||
+        (e && (e.name === 'NetworkError' || e.name === 'NotSupportedError' || e.name === 'InvalidStateError'))) {
+      return 'Could not finish connecting to the radio over Bluetooth. Check that it is powered on, in range, and not connected ' +
+        'to another phone or app (close the Meshtastic app). If the PIN prompt disappeared before you could type, or the PIN was ' +
+        'refused: open the phone’s Settings › Bluetooth, find the radio, choose “Forget This Device”, then connect ' +
+        'again and enter the 6-digit PIN shown on the radio’s screen. (' + msg + ')';
     }
     if (e && e.name === 'SecurityError') return 'Bluetooth permission was refused by the browser. (' + msg + ')';
     return msg;
@@ -152,14 +198,20 @@
     Radio.transport = transport;
     transport.onFrame = handleFrame;
     transport.onClose = handleClose;
+    transport.onStatus = (text, line) => {
+      if (line) logLine(line);
+      if (text && Radio.transport === transport && Radio.state !== 'connected') setState(Radio.state, text);
+    };
     setState('connecting', 'Connecting…');
     try {
       await transport.open();
       logLine('Connected to ' + (transport.name || 'radio') + ' over ' + transport.kind);
       await startConfig();
     } catch (e) {
+      if (userClosed || Radio.transport !== transport) return;      // the user pressed Cancel
       Radio.transport = null;
       try { transport.close(); } catch (e2) { /* never opened */ }
+      logLine('Connect failed: ' + ((e && e.name) || '') + ' ' + ((e && e.message) || e));
       setState('disconnected', describeError(e));
       throw new Error(describeError(e));
     }

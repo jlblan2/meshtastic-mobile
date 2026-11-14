@@ -1,7 +1,7 @@
 // Meshtastic Mobile: the screens. radio.js does the talking to the radio.
 (function () {
   'use strict';
-  const APP_VERSION = '1.0.0';
+  const APP_VERSION = '1.0.1';
   const $ = (id) => document.getElementById(id);
   const BROADCAST = Radio.BROADCAST;
 
