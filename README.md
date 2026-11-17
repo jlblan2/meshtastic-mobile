@@ -52,7 +52,8 @@ connect, check the node list, send a message, then try one small settings change
 | `sw.js`, `manifest.json`, `icons/` | install-to-home-screen and offline start |
 | `disclaimer.js`, `LICENSE` | same as the other apps |
 | `tests.html`, `tests/vectors.js` | open `tests.html` to run the checks |
-| `tools/` | Python generators (not needed on the phone) |
+| `Meshtastic Mobile Guide.doc` / `.docx` / `.pdf` | installation and user guide; the PDF opens from Settings › About and is kept for offline use |
+| `tools/` | Python generators (not needed on the phone); `python tools/make_guide.py` rebuilds the guide from `tools/shot.html` screenshots in `tools/screens/` (needs python-docx and LibreOffice) |
 
 ## Maintenance
 

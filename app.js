@@ -2,6 +2,7 @@
 (function () {
   'use strict';
   const APP_VERSION = '1.0.1';
+  const GUIDE_URL = 'Meshtastic%20Mobile%20Guide.pdf';    // built by tools/make_guide.py
   const $ = (id) => document.getElementById(id);
   const BROADCAST = Radio.BROADCAST;
 
@@ -899,6 +900,7 @@
       h('p', { class: 'muted small', text: 'A phone companion to the Meshtastic GUI PC program. Radio message definitions from the meshtastic library ' + PB.version + '. Firmware updates and full-flash backups need the PC program.' }),
       h('p', { class: 'muted small', text: 'Android: open in Chrome, then menu › Add to Home screen. iPhone: open in the Bluefy browser (Safari cannot use Bluetooth radios).' }),
       h('p', { class: 'muted small', text: 'Messages and settings backups are stored only on this phone. Map tiles © Esri. Meshtastic® is a registered trademark of Meshtastic LLC; this app is independent and not affiliated with or endorsed by the Meshtastic project.' }),
+      h('a', { class: 'btn wide', href: GUIDE_URL, target: '_blank', rel: 'noopener', text: 'Open the user guide (PDF)' }),
       h('button', { class: 'wide', text: 'Show the disclaimer', onclick: () => window.showDisclaimer && window.showDisclaimer() }),
     ], openSections.has('About'));
   }

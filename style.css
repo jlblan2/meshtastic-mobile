@@ -59,6 +59,7 @@ button, .btn { font: inherit; color: var(--text); background: var(--panel2); bor
 button.primary { background: var(--accent); border-color: var(--accent); color: #04211e; font-weight: 700; }
 button.danger { background: #5a1f1f; border-color: var(--bad); }
 button.wide { display: block; width: 100%; margin-top: 10px; }
+a.btn.wide { display: block; width: 100%; margin-top: 10px; text-align: center; text-decoration: none; line-height: 20px; }
 button:disabled { opacity: .45; cursor: default; }
 .row { display: flex; gap: 10px; flex-wrap: wrap; }
 .row > * { flex: 1; }

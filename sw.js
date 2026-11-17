@@ -1,7 +1,7 @@
 // Offline cache for the app's own files (and the map library). Map tiles are
 // never cached: they are only useful online and would fill the phone.
 // Bump CACHE whenever any file below changes.
-const CACHE = 'meshmobile-v2';
+const CACHE = 'meshmobile-v3';
 const ASSETS = [
   './',
   './index.html',
@@ -17,6 +17,7 @@ const ASSETS = [
   './manifest.json',
   './icons/icon-192.png',
   './icons/icon-512.png',
+  './Meshtastic%20Mobile%20Guide.pdf',   // so the guide opens with no signal
 ];
 
 self.addEventListener('install', (event) => {
